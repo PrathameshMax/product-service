@@ -26,6 +26,16 @@ variable "github_repo" {
   type        = string
 }
 
+variable "github_owner_id" {
+  description = "Immutable numeric ID of the GitHub owner (appears in the OIDC sub claim as owner@id)"
+  type        = string
+}
+
+variable "github_repo_id" {
+  description = "Immutable numeric ID of the GitHub repository (appears in the OIDC sub claim as repo@id)"
+  type        = string
+}
+
 variable "dns_zone_name" {
   description = "Subdomain delegated from the registrar to Route 53"
   type        = string

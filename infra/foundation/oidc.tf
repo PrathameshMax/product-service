@@ -1,5 +1,7 @@
 # ---------------------------------------------------------------------------
 # GitHub Actions -> AWS keyless auth (OIDC)
+#   sub claim uses GitHub's immutable format: repo:OWNER@OWNER_ID/REPO@REPO_ID:<context>
+#   pinning numeric IDs means a deleted-and-recreated repo with the same name cannot assume these roles
 #   plan role   : PRs + main branch, read-only + state lock writes
 #   deploy role : only jobs that declare `environment: dev`
 # ---------------------------------------------------------------------------
@@ -32,8 +34,8 @@ data "aws_iam_policy_document" "gha_plan_trust" {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
       values = [
-        "repo:${local.repo_full_name}:pull_request",
-        "repo:${local.repo_full_name}:ref:refs/heads/main",
+        "${local.oidc_repo_sub}:pull_request",
+        "${local.oidc_repo_sub}:ref:refs/heads/main",
       ]
     }
   }
@@ -92,7 +94,7 @@ data "aws_iam_policy_document" "gha_deploy_trust" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${local.repo_full_name}:environment:${var.environment}"]
+      values   = ["${local.oidc_repo_sub}:environment:${var.environment}"]
     }
   }
 }
