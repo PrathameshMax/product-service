@@ -1,0 +1,65 @@
+spring:
+  application:
+    name: product-service
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+  threads:
+    virtual:
+      enabled: true
+
+server:
+  port: ${PORT:8080}
+  shutdown: graceful
+  forward-headers-strategy: native
+  error:
+    include-stacktrace: never
+
+app:
+  name: product-service
+  version: ${APP_VERSION:local}
+  environment: ${APP_ENV:local}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+  info:
+    build:
+      enabled: true
+    env:
+      enabled: true
+
+info:
+  app:
+    version: ${APP_VERSION:local}
+    environment: ${APP_ENV:local}
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+  api-docs:
+    path: /v3/api-docs
+
+logging:
+  structured:
+    format:
+      console: ${LOG_FORMAT:ecs}
+    ecs:
+      service:
+        name: product-service
+        version: ${APP_VERSION:local}
+        environment: ${APP_ENV:local}
+  level:
+    root: INFO
+    com.awsdemo: INFO

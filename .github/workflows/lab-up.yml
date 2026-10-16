@@ -1,0 +1,100 @@
+name: lab-up
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "ECR image tag to deploy (empty = most recently pushed)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-dev
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'ap-south-1' }}
+  ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY || 'product-service' }}
+  TF_VERSION: 1.16.6
+
+jobs:
+  up:
+    name: Create lab stack
+    runs-on: ubuntu-latest
+    environment: dev
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: infra/lab
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: gha-lab-up-${{ github.run_id }}
+          role-duration-seconds: 3600
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - id: tag
+        name: Resolve image tag
+        env:
+          INPUT_TAG: ${{ inputs.image_tag }}
+        run: |
+          TAG="$INPUT_TAG"
+          if [ -z "$TAG" ]; then
+            TAG=$(aws ecr describe-images --repository-name "$ECR_REPOSITORY" \
+              --filter tagStatus=TAGGED \
+              --query 'sort_by(imageDetails,&imagePushedAt)[-1].imageTags[0]' --output text)
+          fi
+          if [ -z "$TAG" ] || [ "$TAG" = "None" ]; then
+            echo "::error::No image in ECR. Push to main (cd workflow) first."
+            exit 1
+          fi
+          aws ecr describe-images --repository-name "$ECR_REPOSITORY" --image-ids imageTag="$TAG" >/dev/null
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Deploying image tag: ${TAG}" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: terraform init
+        run: terraform init -input=false -backend-config=backend.hcl
+
+      - name: terraform apply
+        run: terraform apply -input=false -auto-approve -lock-timeout=120s -var "image_tag=${{ steps.tag.outputs.tag }}"
+
+      - id: out
+        name: Outputs
+        run: |
+          echo "api_url=$(terraform output -raw api_url)" >> "$GITHUB_OUTPUT"
+          {
+            echo '### Lab is up'
+            echo "- API: $(terraform output -raw api_url)"
+            echo "- ALB: $(terraform output -raw alb_dns_name)"
+            echo "- Dashboard: $(terraform output -raw dashboard_url)"
+            echo "- Logs: $(terraform output -raw log_group)"
+            echo ''
+            echo 'Remember: run **lab-down** when finished (it also runs nightly at 23:30 IST).'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Smoke test
+        run: |
+          URL="${{ steps.out.outputs.api_url }}"
+          for i in $(seq 1 30); do
+            if curl -fsS "$URL/actuator/health/readiness" >/dev/null 2>&1; then
+              curl -fsS "$URL/api/v1/info" | jq .
+              curl -fsS "$URL/api/v1/products" | jq .
+              exit 0
+            fi
+            echo "attempt ${i}: not reachable yet (DNS/ALB warm-up)"
+            sleep 10
+          done
+          echo "::error::API not reachable after 5 minutes"
+          exit 1

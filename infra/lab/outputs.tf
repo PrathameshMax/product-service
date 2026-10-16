@@ -1,0 +1,35 @@
+output "api_url" {
+  value = "https://${local.api_fqdn}"
+}
+
+output "alb_dns_name" {
+  value = aws_lb.this.dns_name
+}
+
+output "cluster_name" {
+  value = aws_ecs_cluster.this.name
+}
+
+output "service_name" {
+  value = aws_ecs_service.app.name
+}
+
+output "task_definition_family" {
+  value = aws_ecs_task_definition.app.family
+}
+
+output "container_name" {
+  value = local.container_name
+}
+
+output "image" {
+  value = local.image
+}
+
+output "log_group" {
+  value = aws_cloudwatch_log_group.app.name
+}
+
+output "dashboard_url" {
+  value = "https://${var.region}.console.aws.amazon.com/cloudwatch/home?region=${var.region}#dashboards/dashboard/${aws_cloudwatch_dashboard.this.dashboard_name}"
+}

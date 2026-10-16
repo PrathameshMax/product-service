@@ -1,0 +1,177 @@
+name: ci
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'ap-south-1' }}
+  TF_VERSION: 1.16.6
+  TRIVY_IMAGE: aquasec/trivy:latest
+
+jobs:
+  app:
+    name: Build and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Maven verify
+        run: mvn -B -ntp verify
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: target/surefire-reports
+          retention-days: 7
+
+  image:
+    name: Docker build, scan, smoke test
+    needs: app
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          push: false
+          provenance: false
+          platforms: linux/amd64
+          tags: product-service:ci
+          build-args: APP_VERSION=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Trivy report (HIGH, CRITICAL)
+        run: |
+          mkdir -p "$HOME/.cache/trivy"
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$HOME/.cache/trivy:/root/.cache/trivy" \
+            "$TRIVY_IMAGE" image \
+            --severity HIGH,CRITICAL --ignore-unfixed --no-progress \
+            --format table --exit-code 0 product-service:ci | tee trivy.txt
+          {
+            echo '### Trivy scan (HIGH, CRITICAL, fixable)'
+            echo '```'
+            cat trivy.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Trivy gate (fail on fixable CRITICAL)
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$HOME/.cache/trivy:/root/.cache/trivy" \
+            "$TRIVY_IMAGE" image \
+            --severity CRITICAL --ignore-unfixed --no-progress \
+            --skip-db-update --exit-code 1 product-service:ci
+
+      - name: Container smoke test
+        run: |
+          docker run -d --name ps -p 8080:8080 -e APP_ENV=ci product-service:ci
+          for i in $(seq 1 45); do
+            if curl -fsS http://localhost:8080/actuator/health/readiness >/dev/null; then
+              echo "ready after ${i}s"; break
+            fi
+            sleep 1
+          done
+          curl -fsS http://localhost:8080/actuator/health/readiness
+          curl -fsS http://localhost:8080/api/v1/products
+          curl -fsS http://localhost:8080/api/v1/info
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/api/v1/products/99)" = "404"
+          test "$(docker inspect --format '{{.Config.User}}' product-service:ci)" = "10001"
+
+      - name: Container logs
+        if: always()
+        run: docker logs ps 2>&1 | tail -100 || true
+
+  terraform:
+    name: Terraform fmt and validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: fmt
+        run: terraform fmt -check -recursive -diff infra
+
+      - name: validate foundation
+        working-directory: infra/foundation
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate
+
+      - name: validate lab
+        working-directory: infra/lab
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate
+
+  lab-plan:
+    name: Lab terraform plan (read-only)
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    needs: terraform
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: infra/lab
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_PLAN_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: gha-plan-${{ github.run_id }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: init
+        run: terraform init -input=false -backend-config=backend.hcl
+
+      - name: plan
+        run: |
+          terraform plan -input=false -no-color -lock-timeout=120s -var "image_tag=plan-only" -out=lab.tfplan | tee plan.txt
+          {
+            echo '### Lab plan'
+            echo '```'
+            grep -E '^(Plan:|No changes)' plan.txt || tail -5 plan.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

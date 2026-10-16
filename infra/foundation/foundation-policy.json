@@ -1,0 +1,118 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "ACMCertificateManagement",
+            "Effect": "Allow",
+            "Action": [
+                "acm:RequestCertificate",
+                "acm:DescribeCertificate",
+                "acm:ListTagsForCertificate",
+                "acm:AddTagsToCertificate",
+                "acm:DeleteCertificate"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "SNSAlertsManagement",
+            "Effect": "Allow",
+            "Action": [
+                "sns:CreateTopic",
+                "sns:GetTopicAttributes",
+                "sns:SetTopicAttributes",
+                "sns:TagResource",
+                "sns:UntagResource",
+                "sns:DeleteTopic"
+            ],
+            "Resource": "arn:aws:sns:ap-south-1:718533829466:product-service-alerts"
+        },
+        {
+            "Sid": "GitHubOIDCProviderManagement",
+            "Effect": "Allow",
+            "Action": [
+                "iam:CreateOpenIDConnectProvider",
+                "iam:GetOpenIDConnectProvider",
+                "iam:ListOpenIDConnectProviders",
+                "iam:TagOpenIDConnectProvider",
+                "iam:UntagOpenIDConnectProvider",
+                "iam:DeleteOpenIDConnectProvider"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "Route53ValidationRecords",
+            "Effect": "Allow",
+            "Action": [
+                "route53:ChangeResourceRecordSets",
+                "route53:ListResourceRecordSets"
+            ],
+            "Resource": "arn:aws:route53:::hostedzone/Z08607881O8OIBHFSH31F"
+        },
+        {
+            "Sid": "SNSReadTags",
+            "Effect": "Allow",
+            "Action": [
+                "sns:ListTagsForResource"
+            ],
+            "Resource": "arn:aws:sns:ap-south-1:718533829466:product-service-alerts"
+        },
+        {
+            "Sid": "GitHubActionsRoles",
+            "Effect": "Allow",
+            "Action": [
+                "iam:CreateRole",
+                "iam:GetRole",
+                "iam:UpdateRole",
+                "iam:DeleteRole",
+                "iam:TagRole",
+                "iam:UntagRole",
+                "iam:UpdateAssumeRolePolicy",
+                "iam:AttachRolePolicy",
+                "iam:DetachRolePolicy",
+                "iam:ListAttachedRolePolicies",
+                "iam:ListRolePolicies",
+                "iam:PassRole"
+            ],
+            "Resource": [
+                "arn:aws:iam::718533829466:role/product-service-gha-plan",
+                "arn:aws:iam::718533829466:role/product-service-gha-deploy"
+            ]
+        },
+        {
+            "Sid": "AllowProductServiceAlertSubscription",
+            "Effect": "Allow",
+            "Action": "sns:Subscribe",
+            "Resource": "arn:aws:sns:ap-south-1:718533829466:product-service-alerts"
+        },
+        {
+            "Sid": "AllowProductServiceMonthlyBudget",
+            "Effect": "Allow",
+            "Action": "budgets:ModifyBudget",
+            "Resource": "arn:aws:budgets::718533829466:budget/product-service-monthly"
+        },
+        {
+            "Sid": "AllowGitHubRoleInlinePolicies",
+            "Effect": "Allow",
+            "Action": "iam:PutRolePolicy",
+            "Resource": [
+                "arn:aws:iam::718533829466:role/product-service-gha-plan",
+                "arn:aws:iam::718533829466:role/product-service-gha-deploy"
+            ]
+        },
+        {
+            "Sid": "AllowSNSSubscriptionRead",
+            "Effect": "Allow",
+            "Action": [
+                "sns:GetSubscriptionAttributes",
+                "sns:ListSubscriptionsByTopic"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "AllowMonthlyBudgetTagging",
+            "Effect": "Allow",
+            "Action": "budgets:TagResource",
+            "Resource": "arn:aws:budgets::718533829466:budget/product-service-monthly"
+        }
+    ]
+}

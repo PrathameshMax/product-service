@@ -1,0 +1,11 @@
+target/
+.idea/
+*.iml
+.vscode/
+.DS_Store
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+.terraform.lock.hcl.bak

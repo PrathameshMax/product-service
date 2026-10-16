@@ -1,0 +1,65 @@
+name: lab-down
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 18:00 UTC = 23:30 IST, nightly safety net against a forgotten lab
+    - cron: "0 18 * * *"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-dev
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'ap-south-1' }}
+  TF_VERSION: 1.16.6
+
+jobs:
+  down:
+    name: Destroy lab stack
+    runs-on: ubuntu-latest
+    environment: dev
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: infra/lab
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: gha-lab-down-${{ github.run_id }}
+          role-duration-seconds: 3600
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: terraform init
+        run: terraform init -input=false -backend-config=backend.hcl
+
+      - id: check
+        name: Anything to destroy?
+        run: |
+          COUNT=$(terraform state list 2>/dev/null | grep -vc '^data\.' || true)
+          echo "count=${COUNT}" >> "$GITHUB_OUTPUT"
+          echo "Managed resources in lab state: ${COUNT}"
+
+      - name: terraform destroy
+        if: steps.check.outputs.count != '0'
+        run: terraform destroy -input=false -auto-approve -lock-timeout=120s
+
+      - name: Summary
+        run: |
+          if [ "${{ steps.check.outputs.count }}" = "0" ]; then
+            echo "Lab was already down; nothing destroyed." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Lab destroyed (${{ steps.check.outputs.count }} resources). Foundation (ECR, DNS zone, cert, budget) untouched." >> "$GITHUB_STEP_SUMMARY"
+          fi

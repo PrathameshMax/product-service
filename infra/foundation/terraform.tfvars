@@ -1,0 +1,11 @@
+region               = "ap-south-1"
+project              = "product-service"
+environment          = "dev"
+github_owner         = "PrathameshMax"
+github_repo          = "product-service"
+dns_zone_name        = "dev.nexacommerce.in"
+api_subdomain        = "api"
+alert_email          = "padavekar.prathamesh@gmail.com"
+monthly_budget_limit = 18
+budget_currency      = "USD"
+ecr_keep_image_count = 10
